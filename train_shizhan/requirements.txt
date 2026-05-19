@@ -1,0 +1,11 @@
+torch
+transformers
+datasets
+peft       
+trl==0.12.0                
+accelerate
+bitsandbytes
+wandb       
+sentencepiece
+protobuf
+deepspeed

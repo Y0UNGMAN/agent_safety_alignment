@@ -1,0 +1,51 @@
+# accelerate 配置文件示例 (适用于单机 2 卡 DeepSpeed ZeRO-2)
+
+# 计算环境类型: LOCAL_MACHINE 代表单机多卡
+compute_environment: LOCAL_MACHINE
+
+# 分布式训练类型: 使用 DeepSpeed
+distributed_type: DEEPSPEED
+
+# 是否将 bf16 张量向下转换 (通常不需要)
+downcast_bf16: 'no'
+
+# DeepSpeed 相关配置
+# 注意：虽然可以在这里指定 DeepSpeed 配置文件的路径，
+# 但更常见的做法是通过 `accelerate launch --deepspeed_config_file ds_config_zero2.json` 来传递。
+# 如果在这里指定了，并且命令行也指定了，命令行的优先级更高。
+deepspeed_config:
+  deepspeed_config_file: ds_config_zero2.json  # 指向你的 DeepSpeed JSON 配置文件
+  # zero3_init_flag: false                     # 明确我们不使用 ZeRO-3 的特殊初始化 (因为我们用 ZeRO-2)
+  # gradient_accumulation_steps: auto          # 让 DeepSpeed 从 TrainingArguments 自动获取梯度累积步数
+  # gradient_clipping: auto                    # 让 DeepSpeed 从 TrainingArguments 自动获取梯度裁剪值
+  # offload_optimizer_device: cpu              # 优化器状态卸载到 CPU (通常在 JSON 文件中配置更佳)
+  # offload_param_device: none                 # 参数卸载配置 (ZeRO-3 相关，我们用 ZeRO-2，通常为 none 或 cpu)
+
+# GPU 配置
+# 'all' 表示使用所有可见的 GPU。如果只想用特定卡，可以写 '0,1'
+gpu_ids: all
+
+# 混合精度配置
+# 可选项: 'no', 'fp16', 'bf16'
+# 注意: 当 distributed_type 为 DEEPSPEED 时, 实际使用的混合精度由 deepspeed_config_file 中的配置决定。
+# 此处的设置可以看作一个备用或默认值。推荐设为 'bf16' 如果你的硬件支持 (A100/H100等)。
+# mixed_precision: fp16
+
+# 机器配置 (单机)
+num_machines: 1       # 机器数量
+
+# 进程配置
+num_processes: 2      # 要使用的 GPU 数量 (等于总进程数)
+
+# Rendezvous (集合点) 配置 (通常使用默认值)
+rdzv_backend: static
+same_network: true
+
+# TPU 相关配置 (未使用)
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+tpu_vm: []
+
+# 是否只在 CPU 上运行 (对于 GPU 训练，设为 false)
+use_cpu: false
