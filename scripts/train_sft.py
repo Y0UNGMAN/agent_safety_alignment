@@ -18,11 +18,10 @@ output_dir = "/root/autodl-tmp/agent_safety_alignment/outputs/sft_model"
 
 
 tokenizer=AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=True)
-# model=AutoModelForCausalLM.from_pretrained(model_id_or_path,trust_remote_code=True)
 
 # ----------------- 2.加载数据集 ---------------
 print("Loading Dataset...")
-#如果是多个数据集呢
+
 dataset=load_dataset("json",data_files=dataset_path,split="train")
 
 print(f"数据集一共有{len(dataset)}组数据")
@@ -33,7 +32,6 @@ print(f"数据集：",dataset)
 
 
 # ------------------ 3.处理数据集 ---------------
-# 这一步的作用是把输入输出拼接起来作为一个text输入给模型训练，并且在末尾要加一个eos-token，当然很多时候trl库会自动加，但是还是加了之后更为保险
 SYSTEM_POLICY = """你是一个具备工具调用能力的安全 Agent。
 你必须遵守以下规则：
 1. 只在任务需要且权限允许时调用工具。
@@ -228,11 +226,9 @@ lora_config=LoraConfig(
 )
 
 print("LoRA applied to the model.")
-model.print_trainable_parameters() # 打印可训练参数信息
-
 
 ################################################
-# --------------- 6.训练配置 --------------------
+#  # --------------- 6.训练配置 --------------------
 ################################################
 
 # import wandb
@@ -279,6 +275,9 @@ trainer = SFTTrainer(
     #                                         # 但需要调整 formatting_func 的签名以处理批次
 )
 
+trainer.model.print_trainable_parameters()
+
+
 batch = next(iter(trainer.get_train_dataloader()))
 input_ids = batch["input_ids"][0]
 labels = batch["labels"][0]
@@ -286,6 +285,8 @@ labels = batch["labels"][0]
 print("Loss target text:")
 print(tokenizer.decode(input_ids[labels != -100]))
 
+print("Dry run finished.")
+exit()
 
 
 # --- 10. 开始训练 ---
