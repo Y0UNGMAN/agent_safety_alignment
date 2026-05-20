@@ -12,9 +12,9 @@ import json
 
 
 # --------------- 1.配置模型和数据路径 ---------------
-model_id_or_path = "Qwen/Qwen2.5-1.5B-Instruct"
-dataset_path = "agent_safety_alignment/data/sft/tool_safety_sft_train.jsonl"
-output_dir = "agent_safety_alignment/outputs/sft_model"
+model_id_or_path = "/root/autodl-tmp/models/Qwen/Qwen2.5-1.5B-Instruct"
+dataset_path = "/root/autodl-tmp/agent_safety_alignment/data/sft/tool_safety_sft_train.jsonl"
+output_dir = "/root/autodl-tmp/agent_safety_alignment/outputs/sft_model"
 
 
 tokenizer=AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=True)
