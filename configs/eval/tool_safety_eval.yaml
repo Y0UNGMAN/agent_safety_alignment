@@ -1,0 +1,22 @@
+model_name_or_path: /root/autodl-tmp/models/Qwen/Qwen2.5-1.5B-Instruct
+adapter_path: outputs/sft_model
+output_path: reports/tool_safety_eval_results.json
+bf16: true
+
+generation:
+  max_new_tokens: 256
+  do_sample: false
+  temperature: 0.0
+  top_p: 1.0
+
+eval_sets:
+  - name: custom_safety
+    path: data/eval/tool_safety_eval.jsonl
+
+metrics:
+  - action_accuracy
+  - json_valid_rate
+  - tool_name_accuracy
+  - argument_accuracy
+  - refusal_accuracy
+  - unsafe_tool_call_rate

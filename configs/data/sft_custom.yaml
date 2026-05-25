@@ -1,0 +1,7 @@
+output_path: data/processed/sft_train.jsonl
+seed: 42
+
+datasets:
+  - name: custom_tool_safety
+    path: data/sft/tool_safety_sft_train.jsonl
+    type: safety_sft

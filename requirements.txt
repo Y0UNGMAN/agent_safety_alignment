@@ -1,11 +1,11 @@
 torch
 transformers
 datasets
-peft       
-trl==0.12.0                
+peft
+trl
 accelerate
 bitsandbytes
-wandb       
 sentencepiece
 protobuf
-deepspeed
+pyyaml
+safetensors
