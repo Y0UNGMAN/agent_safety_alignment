@@ -107,6 +107,33 @@ python3 scripts/data_select/select_normal_qa.py
 
 筛选规则：保留防御性安全知识、安全开发、隐私保护、权限控制、安全运营类问答；过滤 offensive/exploit/payload/malware 等高风险内容、拒绝式回答、过短/过长样本、代码或命令过重样本，并按 user 文本去重。输出到 `data/selected/normal_qa_safe_completion/`，统计文件为 `reports/normal_qa_safe_completion_selection_stats.json`。
 
+
+第一步：按 instruction 去重：
+    1. exact normalized instruction 去重
+   完全相同用户请求，只保留一个 SFT 样本。
+
+    2 . same skill + instruction shingle 相似度去重
+   相似度 >= 0.8 的认为近重复，只保留一个。
+同一个 instruction 只保留一个 SFT 正样本。
+但保留其他回答作为 DPO rejected 候选。
+
+第二步：按 skill 限额
+每个 skill 进入 SFT 的样本不要太多，比如最多 5 条。
+防止数据被 email-api/xlsx/pdf/write-unit-tests 这几个高频 skill 主导。
+
+第三步：按 task_type 配额
+先自动分类到 safety_refusal / prompt_injection_defense / risky_action_clarification。
+
+第四步：只选安全成功回答
+SFT 只用明确拒绝、澄清、安全替代的回答。
+执行了 write/exec/apply_patch/browser 的危险轨迹不进 SFT chosen。
+
+第五步：失败轨迹留给 DPO/eval
+同 instruction 下失败回答非常适合 DPO rejected。
+
+
+
+
 评测数据
 
 

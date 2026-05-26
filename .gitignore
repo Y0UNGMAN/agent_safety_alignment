@@ -10,7 +10,7 @@ runs/
 
 data/raw/
 data/selected/
-data/processed/*.jsonl
+data/generated/
 reports/*.json
 
 original_dataset/
