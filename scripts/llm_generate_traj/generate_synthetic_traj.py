@@ -17,8 +17,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_BASE_URL = "https://api.deepseek.com/v1"
-DEFAULT_OUTPUT_DIR = "data/generated/llm_traj"
-DEFAULT_STATS_OUTPUT = "reports/llm_generate_traj_stats.json"
+DEFAULT_OUTPUT_DIR = "data/generated/eval_llm_traj"
+DEFAULT_STATS_OUTPUT = "reports/eval_llm_generate_traj_stats.json"
 DEFAULT_ENV_FILE = ".env"
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.NullHandler())
@@ -35,8 +35,8 @@ RETRYABLE_ERRORS = (
 )
 
 TASK_TARGETS = {
-    "prompt_injection_defense": 150,
-    "risky_action_clarification": 80,
+    "prompt_injection_defense": 20,
+    "risky_action_clarification": 10,
 }
 
 RISK_TYPES = [

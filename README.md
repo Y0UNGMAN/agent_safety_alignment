@@ -22,11 +22,19 @@ agent_safety_alignment/
 │   └── train/
 ├── data/
 │   ├── eval/
+│   ├── generated/
 │   ├── processed/
+│   ├── selected/
 │   ├── sft/
 │   └── tools/
+├── docs/
+│   └── data_schema.md
 ├── scripts/
-│   ├── prepare_data.py
+│   ├── data_prepare/
+│   ├── data_select/
+│   ├── data_select_eval/
+│   ├── llm_generate_traj/
+│   ├── report_generate/
 │   ├── train_sft.py
 │   ├── eval_safety.py
 │   └── infer_lora.py
@@ -34,6 +42,72 @@ agent_safety_alignment/
 ├── outputs/
 └── reports/
 ```
+
+## Data Flow
+
+本项目允许不同原始数据源使用不同的 source-specific 脚本解析，但所有下游训练和评测都依赖统一的 canonical schema。schema 说明见：
+
+```text
+docs/data_schema.md
+```
+
+整体数据流：
+
+```text
+original_dataset/                  原始开源数据和真实轨迹，格式各不相同
+        ↓
+scripts/data_select/               训练数据筛选：按来源解析、过滤、去重、分配 task_type/risk_type
+        ↓
+data/selected/                     训练候选数据，仍可能保留来源特定字段
+        ↓
+scripts/data_prepare/              转换为统一 SFT schema
+        ↓
+data/processed/                    训练用 canonical JSONL
+        ↓
+scripts/train_sft.py               LoRA/QLoRA SFT
+        ↓
+outputs/                           adapter、checkpoint、tokenizer
+        ↓
+scripts/report_generate/           训练曲线和训练摘要
+        ↓
+reports/training_runs/
+```
+
+评测数据流：
+
+```text
+original_dataset/ 或 data/generated/
+        ↓
+scripts/data_select_eval/          评测集筛选，排除训练集重合样本
+        ↓
+data/eval/                         离线模型评测 canonical JSONL
+
+data/generated/eval_llm_traj/      LLM 生成的 agent 安全评测候选
+        ↓
+后续转换为 OpenClaw/agent eval case
+        ↓
+OpenClaw / agent trajectory eval
+        ↓
+reports/eval_runs/
+```
+
+核心训练产物：
+
+```text
+data/processed/sft_train.jsonl
+outputs/sft_model_qwen3_8b_*/
+```
+
+核心评测产物：
+
+```text
+data/eval/normal_tool_use_eval.jsonl
+data/eval/normal_qa_eval.jsonl
+data/generated/eval_llm_traj/prompt_injection_defense_candidates.jsonl
+data/generated/eval_llm_traj/risky_action_clarification_candidates.jsonl
+```
+
+`reports/*stats*.json` 是数据筛选和转换过程的统计审计文件，例如候选数量、过滤原因、标签分布、来源分布。它们不是训练必需文件；如果误删，通常可以通过重新运行对应脚本生成。为了简历和复现，建议保留或在 README 中记录关键统计。
 
 ## Setup
 
@@ -107,6 +181,22 @@ python3 scripts/data_select/select_normal_qa.py
 
 筛选规则：保留防御性安全知识、安全开发、隐私保护、权限控制、安全运营类问答；过滤 offensive/exploit/payload/malware 等高风险内容、拒绝式回答、过短/过长样本、代码或命令过重样本，并按 user 文本去重。输出到 `data/selected/normal_qa_safe_completion/`，统计文件为 `reports/normal_qa_safe_completion_selection_stats.json`。
 
+训练最终合并文件：
+
+```text
+data/processed/sft_train.jsonl
+```
+
+当前训练集规模为 1000 条：
+
+```text
+normal_tool_use: 400
+normal_qa_or_safe_completion: 200
+safety_refusal: 250
+prompt_injection_defense: 100
+risky_action_clarification: 50
+```
+
 
 第一步：按 instruction 去重：
     1. exact normalized instruction 去重
@@ -142,8 +232,22 @@ SFT 只用明确拒绝、澄清、安全替代的回答。
 安全拒绝 / 越权 / 越狱防御：40%
 
 第一层：task_type
-normal_tool_use: 40%                        80条
-normal_qa_or_safe_completion: 40%           80条
-safety_refusal: 25%                         50条
-prompt_injection_defense: 10%               20条
-risky_action_clarification: 5%              10条
+normal_tool_use: 40%                        80条                离线测模型
+normal_qa_or_safe_completion: 20%           40条                离线测模型
+safety_refusal: 25%                         50条                接 OpenClaw / agent 测
+prompt_injection_defense: 10%               20条                离线测模型
+risky_action_clarification: 5%              10条                离线测模型
+
+当前已生成的离线评测集：
+
+```text
+data/eval/normal_tool_use_eval.jsonl        80 条
+data/eval/normal_qa_eval.jsonl              40 条
+```
+
+当前已生成的 agent 安全评测候选：
+
+```text
+data/generated/eval_llm_traj/prompt_injection_defense_candidates.jsonl       20 条
+data/generated/eval_llm_traj/risky_action_clarification_candidates.jsonl     10 条
+```

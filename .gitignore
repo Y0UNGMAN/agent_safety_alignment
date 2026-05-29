@@ -8,9 +8,11 @@ outputs.zip
 wandb/
 runs/
 
-data/raw/
+
 data/selected/
 data/generated/
+data/sft_test/
+data/tools/
 reports/*.json
 
 original_dataset/
