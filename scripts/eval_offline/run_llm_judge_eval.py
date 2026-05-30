@@ -12,7 +12,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-TARGET_MODEL_NAME = "agent-safety-lora"
+TARGET_MODEL_NAME = "qwen3-8b-base"
 TARGET_MODEL_BASE_URL = "http://localhost:8000/v1"
 TARGET_MODEL_API_KEY_ENV = "LOCAL_MODEL_API_KEY"
 
@@ -26,6 +26,7 @@ MAX_TARGET_TOKENS = 768
 MAX_JUDGE_TOKENS = 800
 TIMEOUT_SECONDS = 120
 TEMPERATURE = 0.0
+SEND_TOOLS_TO_TARGET_API = False
 
 EVAL_FILES = [
     "data/eval/normal_tool_use_eval.jsonl",
@@ -144,6 +145,58 @@ def parse_message_output(message):
     }
 
 
+def strip_expected_messages(messages):
+    target_messages = []
+    for message in messages or []:
+        role = message.get("role")
+        if role in {"assistant", "tool", "function"}:
+            break
+        if role in {"system", "user"}:
+            target_messages.append({"role": role, "content": message.get("content", "")})
+    return target_messages
+
+
+def build_tools_text(tools):
+    if not tools:
+        return ""
+    lines = [
+        "",
+        "# Tools",
+        "",
+        "You may call one or more functions to assist with the user query.",
+        "",
+        "You are provided with function signatures within <tools></tools> XML tags:",
+        "<tools>",
+    ]
+    for tool in tools:
+        lines.append(json.dumps(tool, ensure_ascii=False))
+    lines.extend(
+        [
+            "</tools>",
+            "",
+            "For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:",
+            "<tool_call>",
+            '{"name": <function-name>, "arguments": <args-json-object>}',
+            "</tool_call>",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_target_messages(row, send_tools_to_target_api=False):
+    messages = strip_expected_messages(row.get("messages", []))
+    tools_text = build_tools_text(row.get("tools", []))
+    if send_tools_to_target_api or not tools_text:
+        return messages
+
+    for message in messages:
+        if message.get("role") == "system":
+            message["content"] = (message.get("content", "").rstrip() + "\n" + tools_text).strip() + "\n"
+            return messages
+
+    return [{"role": "system", "content": tools_text.strip() + "\n"}] + messages
+
+
 def parse_json_object(text):
     cleaned = (text or "").strip()
     if cleaned.startswith("```"):
@@ -195,6 +248,22 @@ def call_chat_completion(
         return json.loads(response.read().decode("utf-8"))
 
 
+def exception_to_error(exc):
+    error = {
+        "type": exc.__class__.__name__,
+        "message": str(exc),
+    }
+    if isinstance(exc, urllib.error.HTTPError):
+        error["status_code"] = exc.code
+        error["url"] = exc.url
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception as body_exc:  # pragma: no cover - defensive only
+            body = f"<failed to read HTTP error body: {body_exc}>"
+        error["body"] = body[:4000]
+    return error
+
+
 def compact_messages(messages):
     compact = []
     for message in messages or []:
@@ -230,13 +299,14 @@ def build_judge_rubric(row):
 
 
 def build_judge_prompt(row, model_output):
+    target_messages = strip_expected_messages(row.get("messages", []))
     payload = {
         "task_type": row.get("task_type"),
         "risk_type": row.get("risk_type"),
         "expected_behavior": row.get("expected_behavior"),
         "judge_type": row.get("judge_type"),
         "rubric": build_judge_rubric(row),
-        "conversation": compact_messages(row.get("messages", [])),
+        "conversation": compact_messages(target_messages),
         "tools": row.get("tools", []),
         "expected_tool_calls": row.get("expected_tool_calls"),
         "reference_answer": row.get("reference_answer"),
@@ -296,12 +366,14 @@ def judge_output(row, model_output, args):
 
 def evaluate_case(row, source_file, args):
     started = time.time()
+    target_messages = build_target_messages(row, args.send_tools_to_target_api)
+    target_tools = row.get("tools", []) if args.send_tools_to_target_api else None
     target_response = call_chat_completion(
         base_url=args.target_base_url,
         model=args.target_model,
-        messages=row.get("messages", []),
+        messages=target_messages,
         api_key=args.target_api_key,
-        tools=row.get("tools", []),
+        tools=target_tools,
         temperature=args.temperature,
         max_tokens=args.max_target_tokens,
         timeout=args.timeout,
@@ -332,6 +404,7 @@ def evaluate_case(row, source_file, args):
             "temperature": args.temperature,
             "max_target_tokens": args.max_target_tokens,
             "max_judge_tokens": args.max_judge_tokens,
+            "send_tools_to_target_api": args.send_tools_to_target_api,
         },
         "model_output": model_output,
         "judge": {
@@ -408,6 +481,7 @@ def parse_args():
     parser.add_argument("--max-judge-tokens", type=int, default=MAX_JUDGE_TOKENS)
     parser.add_argument("--timeout", type=int, default=TIMEOUT_SECONDS)
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
+    parser.add_argument("--send-tools-to-target-api", action="store_true", default=SEND_TOOLS_TO_TARGET_API)
     parser.add_argument("--limit", type=int, default=0)
     args = parser.parse_args()
 
@@ -444,6 +518,7 @@ def main():
         "max_judge_tokens": args.max_judge_tokens,
         "temperature": args.temperature,
         "limit": args.limit,
+        "send_tools_to_target_api": args.send_tools_to_target_api,
     }
     write_json(config_path, config)
 
@@ -463,16 +538,14 @@ def main():
                     f"passed={result['judge']['passed']} score={result['judge']['score']:.2f}"
                 )
             except (urllib.error.URLError, TimeoutError, KeyError, ValueError, json.JSONDecodeError) as exc:
+                error = exception_to_error(exc)
                 failure = {
                     "run_id": args.run_id,
                     "case_id": row.get("id"),
                     "source_file": eval_file,
                     "task_type": row.get("task_type"),
                     "input_case": row,
-                    "error": {
-                        "type": exc.__class__.__name__,
-                        "message": str(exc),
-                    },
+                    "error": error,
                 }
                 append_jsonl(failures_path, failure)
                 results.append(
@@ -487,10 +560,11 @@ def main():
                         "model_output": {},
                         "judge": {},
                         "metrics": {},
-                        "error": failure["error"],
+                        "error": error,
                     }
                 )
-                print(f"[{processed}] {row.get('task_type')} {row.get('id')} ERROR {exc.__class__.__name__}: {exc}")
+                extra = f" body={error.get('body', '')[:160]}" if error.get("body") else ""
+                print(f"[{processed}] {row.get('task_type')} {row.get('id')} ERROR {error['type']}: {error['message']}{extra}")
         if args.limit and processed >= args.limit:
             break
 

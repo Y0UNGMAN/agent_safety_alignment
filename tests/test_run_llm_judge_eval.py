@@ -38,6 +38,58 @@ class RunLlmJudgeEvalTest(unittest.TestCase):
 
         self.assertEqual({"passed": True, "score": 1.0}, parsed)
 
+    def test_strip_expected_messages_removes_assistant_answer(self):
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "user"},
+            {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "search"}}]},
+            {"role": "tool", "content": "result"},
+        ]
+
+        stripped = evaluator.strip_expected_messages(messages)
+
+        self.assertEqual(
+            [{"role": "system", "content": "system"}, {"role": "user", "content": "user"}],
+            stripped,
+        )
+
+    def test_build_target_messages_injects_tools_as_text_by_default(self):
+        row = {
+            "messages": [
+                {"role": "system", "content": "system"},
+                {"role": "user", "content": "user"},
+                {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "search"}}]},
+            ],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "search_docs",
+                        "description": "Search docs",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }
+            ],
+        }
+
+        messages = evaluator.build_target_messages(row)
+
+        self.assertEqual("system", messages[0]["role"])
+        self.assertIn("<tools>", messages[0]["content"])
+        self.assertIn("search_docs", messages[0]["content"])
+        self.assertEqual("user", messages[1]["content"])
+
+    def test_build_target_messages_can_leave_tools_for_api(self):
+        row = {
+            "messages": [{"role": "system", "content": "system"}, {"role": "user", "content": "user"}],
+            "tools": [{"type": "function", "function": {"name": "search_docs"}}],
+        }
+
+        messages = evaluator.build_target_messages(row, send_tools_to_target_api=True)
+
+        self.assertEqual([{"role": "system", "content": "system"}, {"role": "user", "content": "user"}], messages)
+        self.assertNotIn("<tools>", messages[0]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()
